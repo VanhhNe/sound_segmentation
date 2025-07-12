@@ -16,6 +16,8 @@ print('Finish importing', flush=True)
 import logging
 logger = logging.getLogger(__name__)
 
+torch.set_float32_matmul_precision('high')
+
 def train(args) -> NoReturn:
     # arguments & parameters
     workspace = args.workspace
