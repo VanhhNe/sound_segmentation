@@ -1,0 +1,30 @@
+# Ignore data and experiment folders
+data/
+checkpoint/
+workspace/
+
+# Ignore virtual environment
+.env/
+
+# Ignore this directory (maybe local tools or scripts)
+SpatialScaper/
+
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*.so
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# VSCode / IDE
+.vscode/
+.idea/
+
