@@ -1,6 +1,13 @@
 from src.datamodules.dataset.s5.dataset_diffusion import DatasetDifussion
 import torch
 from torch.utils.data import DataLoader
+import torchaudio
+import matplotlib.pyplot as plt
+import numpy as np
+from src.utils import LABELS
+
+import warnings
+warnings.filterwarnings("ignore", message=".*return_complex.*")
 
 def main():
     dummy_config = {
@@ -32,24 +39,84 @@ def main():
         n_sources=3,
         label_set="dcase2025t4",
         return_dry=True,        # có thêm dry sources
-        label_vector_mode="multihot",
+        label_vector_mode="stack",
         checking=True           # trả về đầy đủ output để kiểm tra
     )
 
-    dataloader = DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=dataset.collate_fn)
+    dataloader = DataLoader(dataset, batch_size=1000, shuffle=True, collate_fn=dataset.collate_fn)
+
+    print("Full labels:", LABELS['dcase2025t4'])
+    sample = dataloader.dataset[1]
+    mixture = sample['mixture']
+    dry_sources = sample['dry_sources']
+    labels = sample['label_vector']
+    stack_labels = []
+    for label in labels:
+        stack_labels.append(LABELS['dcase2025t4'][label.argmax().item()] if label.sum().item() > 0 else 'silence')
+        print("Label: ", stack_labels[-1])
+    print("Sample labels:", labels)
+    print("Sample dry_sources shape:", dry_sources.shape)
+
+    stft = torchaudio.transforms.Spectrogram(
+        n_fft=1024, 
+        win_length=1024, 
+        hop_length=512, 
+        power=2.0)
+    
+    N, C, T = dry_sources.shape
+    time_axis = np.linspace(0, T / 32000, T)
+
+    fig, axes = plt.subplots(N+1, 1, figsize=(12, 2*N), sharex=True)
+
+    fig2, axes2 = plt.subplots(N+1, 1, figsize=(12, 2*N), sharex=True)
+
+    if N == 1:
+        axes = [axes]
+
+    fig1, axes1 = plt.subplots(N+1, 1, figsize=(10, 2*(N+1)))
+
+    for i in range(N):
+        waveform = dry_sources[i, 0].cpu().numpy()   # lấy kênh 0
+        axes1[i].plot(time_axis, waveform)
+        axes1[i].set_title(f"Source {i+1}: {stack_labels[i]}")
+        axes1[i].set_ylabel("Amplitude")
+
+    # Mixture
+    waveform = mixture[0].cpu().numpy()
+    axes1[N].plot(time_axis, waveform)
+    axes1[N].set_title("Mixture")
+    axes1[N].set_ylabel("Amplitude")
+    axes1[N].set_xlabel("Time (s)")
+
+    fig1.tight_layout()
+    fig1.savefig("dry_sources_plot.png")
+    print("Saved waveform plot to dry_sources_plot.png")
 
 
-    for i, batch in enumerate(dataloader):
-        print(f"\nBatch {i}")
-        print("Mixture shape:", batch["mixture"].shape)
-        print("Label vector shape:", batch["label_vector"].shape)
-        print("Labels:", batch["label"])
-        if "dry_sources" in batch:
-            print("Dry sources shape:", batch["dry_sources"].shape)
-        if "spatialscaper" in batch:
-            print("Spatialscaper keys:", batch["spatialscaper"][0].keys())
-        if i == 2:  # chỉ in 2 batch đầu
-            break
+    # --- Figure 2: Spectrograms ---
+    fig2, axes2 = plt.subplots(N+1, 1, figsize=(10, 2*(N+1)))
+
+    for i in range(N):
+        spectrogram = stft(dry_sources[i]).cpu().numpy()
+        axes2[i].imshow(10 * np.log10(spectrogram[0] + 1e-10),
+                        aspect='auto', origin='lower')
+        axes2[i].set_title(f"Spectrogram Source {i+1}: {stack_labels[i]}")
+        axes2[i].set_ylabel("Frequency Bin")
+
+    # Mixture
+    spectrogram = stft(mixture).cpu().numpy()
+    axes2[N].imshow(10 * np.log10(spectrogram[0] + 1e-10),
+                    aspect='auto', origin='lower')
+    axes2[N].set_title("Spectrogram Mixture")
+    axes2[N].set_ylabel("Frequency Bin")
+    axes2[N].set_xlabel("Time Frame")
+
+    fig2.tight_layout()
+    fig2.savefig("dry_sources_spectrogram.png")
+    print("Saved spectrogram plot to dry_sources_spectrogram.png")
+
+    plt.close(fig1)
+    plt.close(fig2)
 
 if __name__ == "__main__":
     main()

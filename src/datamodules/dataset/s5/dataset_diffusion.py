@@ -13,6 +13,7 @@ import random
 
 from src.modules.spatialscaper2.semseg_spatialscaper2 import SemgSegScaper2
 from src.utils import LABELS
+import torchaudio
 
 def collate_fn(list_data_dict):
     data = {k: [] for k in list_data_dict[0].keys()}
@@ -40,7 +41,14 @@ class DatasetDifussion(torch.utils.data.Dataset):
         self.n_sources = n_sources
         self.return_dry = return_dry
         self.label_vector_mode = label_vector_mode
-
+        self.stft = torchaudio.transforms.Spectrogram(
+            n_fft=2048, 
+            win_length=2048, 
+            hop_length=512, 
+            window_fn=torch.hann_window,
+            power=None,
+            return_complex=True)
+        
         if isinstance(config, str): # path to json
             self.from_metadata = True
             self.metadata_dir = os.path.dirname(config)
