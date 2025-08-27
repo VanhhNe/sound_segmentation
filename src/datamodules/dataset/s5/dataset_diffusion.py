@@ -46,7 +46,7 @@ class DatasetDifussion(torch.utils.data.Dataset):
             win_length=2048, 
             hop_length=512, 
             window_fn=torch.hann_window,
-            power=None,
+            power=2.0,
             return_complex=True)
         
         if isinstance(config, str): # path to json
@@ -149,6 +149,13 @@ class DatasetDifussion(torch.utils.data.Dataset):
             dry_sources = torch.from_numpy(dry_sources_all)
             if self.return_dry: item['dry_sources']= dry_sources.to(torch.float32) # [nsources, 1 ch, wlen]
 
+            # Compute spectrogram for dry sources
+            dry_sources_spectrogram = self.stft(dry_sources.flatten(0,1))
+            item['dry_sources_spec'] = dry_sources_spectrogram # [nsources, freq, time]
+
+            # Compute spectrogram for mixture
+            mixture_spectrogram = self.stft(item['mixture'])
+            item['mixture_spec'] = mixture_spectrogram # [nch, freq, time]
         if self.checking: item['spatialscaper'] = output # return everything
 
         return item

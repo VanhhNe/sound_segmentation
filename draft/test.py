@@ -50,18 +50,14 @@ def main():
     mixture = sample['mixture']
     dry_sources = sample['dry_sources']
     labels = sample['label_vector']
+    dry_sources_spec = sample['dry_sources_spec']
+    mixture_spec = sample['mixture_spec']
     stack_labels = []
     for label in labels:
         stack_labels.append(LABELS['dcase2025t4'][label.argmax().item()] if label.sum().item() > 0 else 'silence')
         print("Label: ", stack_labels[-1])
     print("Sample labels:", labels)
     print("Sample dry_sources shape:", dry_sources.shape)
-
-    stft = torchaudio.transforms.Spectrogram(
-        n_fft=1024, 
-        win_length=1024, 
-        hop_length=512, 
-        power=2.0)
     
     N, C, T = dry_sources.shape
     time_axis = np.linspace(0, T / 32000, T)
@@ -97,15 +93,16 @@ def main():
     fig2, axes2 = plt.subplots(N+1, 1, figsize=(10, 2*(N+1)))
 
     for i in range(N):
-        spectrogram = stft(dry_sources[i]).cpu().numpy()
-        axes2[i].imshow(10 * np.log10(spectrogram[0] + 1e-10),
+        spectrogram = dry_sources_spec[i].cpu().numpy()
+        print(spectrogram.shape)  # (freq, time)
+        axes2[i].imshow(10 * np.log10(spectrogram + 1e-10),
                         aspect='auto', origin='lower')
         axes2[i].set_title(f"Spectrogram Source {i+1}: {stack_labels[i]}")
         axes2[i].set_ylabel("Frequency Bin")
 
     # Mixture
-    spectrogram = stft(mixture).cpu().numpy()
-    axes2[N].imshow(10 * np.log10(spectrogram[0] + 1e-10),
+    spectrogram =mixture_spec[0].cpu().numpy()
+    axes2[N].imshow(10 * np.log10(spectrogram + 1e-10),
                     aspect='auto', origin='lower')
     axes2[N].set_title("Spectrogram Mixture")
     axes2[N].set_ylabel("Frequency Bin")
