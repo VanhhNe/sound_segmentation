@@ -295,15 +295,15 @@ class MambaUnet_Base(nn.Module, Base):
     
         x1 = self.pre_conv(x)
         x1_proc = self.enc1(x1, context_vector)
-        x1_pool = self.down(x1_proc)
+        x1_pool = self.down1(x1_proc)
 
         x2 = self.pre_enc2_conv(x1_pool)
         x2_proc = self.enc2(x2, context_vector)
-        x2_pool = self.down(x2_proc)
+        x2_pool = self.down2(x2_proc)
 
         x3 = self.pre_enc3_conv(x2_pool)
         x3_proc = self.enc1(x1, context_vector)
-        x3_pool = self.down(x1_proc)
+        x3_pool = self.down3(x1_proc)
 
         x_center = self.bottleneck(x3_pool, context_vector)
 

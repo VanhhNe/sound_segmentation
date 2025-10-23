@@ -16,7 +16,7 @@ datamodule:
             pin_memory: true
             persistent_workers: true
             dataset:
-                module: src.datamodules.dataset.s5.dataset_diffusion
+                module: src.datamodules.dataset.s5.dataset_s5
                 main: DatasetS5
                 args:
                     config:
@@ -24,6 +24,7 @@ datamodule:
                             foreground_dir: "data/dev_set/sound_event/train"
                             background_dir: "data/dev_set/noise/train"
                             rir_dir: "data/dev_set/room_ir/train"
+                            interference_dir: "data/dev_set/interference/train"
                             duration: 10.0
                             sr: 32000
                             max_event_overlap: 3
@@ -52,7 +53,7 @@ datamodule:
             pin_memory: true
             persistent_workers: true
             dataset:
-                module: src.datamodules.dataset.s5.dataset_diffusion
+                module: src.datamodules.dataset.s5.dataset_s5
                 main: DatasetS5
                 args:
                     config: 'data/dev_set/metadata/valid.json'
@@ -66,8 +67,8 @@ lightning_module:
     main: LabelQueriedSeparationLightning
     args:
         model:
-            module: src.models.resunet2.resunet_mod
-            main: ResUNet30
+            module: src.models.resunet2.resmamba_mod2
+            main: MambaUNet
             args:
                 input_channels: 4
                 output_channels: 1
