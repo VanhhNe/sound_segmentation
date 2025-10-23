@@ -56,6 +56,10 @@ def main():
     dataloader = DataLoader(dataset, batch_size=1000, shuffle=True, collate_fn=dataset.collate_fn)
 
     args = create_argparser().parse_args()
+    print("Training diffusion model on dataset:", args.data_name)
+    print("Data directory:", args.data_dir)
+    print("Output directory:", args.out_dir)
+    
 
     dist_util.setup_dist(args)
     logger.configure(dir = args.out_dir)

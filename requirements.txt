@@ -1,6 +1,4 @@
 ### Requirements
--f https://download.pytorch.org/whl/cu121
-torch
 torchvision
 torchaudio
 lightning
@@ -8,8 +6,6 @@ librosa
 soundfile
 scipy
 matplotlib
-tqdm
-numpy
 pandas
 tensorflow
 tensorflow-probability
@@ -18,7 +14,6 @@ seaborn
 ipykernel
 thop
 openl3
-transformers
 bs4
 python-sofa
 onnx
@@ -30,5 +25,4 @@ jupyterlab
 tensorboard
 torchlibrosa
 timm
-einops
 nnAudio
