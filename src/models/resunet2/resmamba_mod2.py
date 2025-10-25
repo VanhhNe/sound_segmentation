@@ -124,11 +124,11 @@ class MambaUnet_Base(nn.Module, Base):
         self.enc1 = ConditionalMamba2DBlock(32, context_dim)
         self.down1 = nn.AvgPool2d((2, 2))
 
-        self.enc2 = ConditionalMamba2DBlock(32, context_dim)
+        self.enc2 = ConditionalMamba2DBlock(64, context_dim)
         self.pre_enc2_conv = nn.Conv2d(32, 64, kernel_size=(1,1)) # Tăng kênh
         self.down2 = nn.AvgPool2d((2, 2))
 
-        self.enc3 = ConditionalMamba2DBlock(64, context_dim)
+        self.enc3 = ConditionalMamba2DBlock(128, context_dim)
         self.pre_enc3_conv = nn.Conv2d(64, 128, kernel_size=(1,1))
         self.down3 = nn.AvgPool2d((2, 2))
 
@@ -302,25 +302,25 @@ class MambaUnet_Base(nn.Module, Base):
         x2_pool = self.down2(x2_proc)
 
         x3 = self.pre_enc3_conv(x2_pool)
-        x3_proc = self.enc1(x1, context_vector)
-        x3_pool = self.down3(x1_proc)
+        x3_proc = self.enc3(x3, context_vector)
+        x3_pool = self.down3(x3_proc)
 
         x_center = self.bottleneck(x3_pool, context_vector)
 
         dec1_up = self.up1(x_center)
-        x_skip_connection = x3_pool # From enc3
+        x_skip_connection = x3_proc # From enc3
         dec1_cat = torch.cat((dec1_up, x_skip_connection), dim=1)
         dec1_proc = self.dec1(dec1_cat, context_vector)
         dec1_out = self.post_dec1_conv(dec1_proc)
 
         dec2_up = self.up2(dec1_out)
-        x_skip_connection = x2_pool # from enc2
+        x_skip_connection = x2_proc # from enc2
         dec2_cat = torch.cat((dec2_up, x_skip_connection), dim=1)
         dec2_proc = self.dec2(dec2_cat, context_vector)
         dec2_out = self.post_dec2_conv(dec2_proc)
 
         dec3_up = self.up3(dec2_out)
-        x_skip_connection = x3_pool # from enc2
+        x_skip_connection = x1_proc # from enc1
         dec3_cat = torch.cat((dec3_up, x_skip_connection), dim=1)
         dec3_proc = self.dec3(dec3_cat, context_vector)
         dec3_out = self.post_dec3_conv(dec3_proc)
