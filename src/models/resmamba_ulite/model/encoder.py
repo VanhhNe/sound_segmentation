@@ -1,6 +1,6 @@
 import torch.nn as nn
-from module.resmambalite import ResMambaLite
-from module.pooling_attention import Pooling_attention
+from resmamba_ulite.resmambalite import ResMambaLite
+from resmamba_ulite.pooling_attention import Pooling_attention
 
 class EncoderBlock(nn.Module):
     """Encoding then downsampling"""

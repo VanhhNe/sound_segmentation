@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from module.cbam import CBAM
+from resmamba_ulite.cbam import CBAM
 
 class Attention_block(nn.Module):
     def __init__(self,F_g,F_l,F_int):
