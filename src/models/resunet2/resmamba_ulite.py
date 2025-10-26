@@ -207,8 +207,8 @@ class ConvBlockRes(nn.Module):
 
         b1 = film_dict['beta1']
         b2 = film_dict['beta2']
-        x = self.mamba(x)
-        x = self.conv1(F.leaky_relu_(self.bn1(input_tensor) + b1, negative_slope=0.01))
+        x = self.mamba(input_tensor)
+        x = self.conv1(F.leaky_relu_(self.bn1(x) + b1, negative_slope=0.01))
         x = self.conv2(F.leaky_relu_(self.bn2(x) + b2, negative_slope=0.01))
 
         if self.is_shortcut:
@@ -285,36 +285,36 @@ class DecoderBlockRes1B(nn.Module):
         init_bn(self.bn1)
         init_bn(self.bn2)
 
-    def forward(
-        self, input_tensor: torch.Tensor, concat_tensor: torch.Tensor, film_dict: Dict,
-    ) -> torch.Tensor:
-        r"""Forward data into the module.
-
-        Args:
-            input_tensor: (batch_size, input_feature_maps, downsampled_time_steps, downsampled_freq_bins)
-            concat_tensor: (batch_size, input_feature_maps, time_steps, freq_bins)
-
-        Returns:
-            output_tensor: (batch_size, output_feature_maps, time_steps, freq_bins)
-        """
-        # b1 = film_dict['beta1']
-        x = self.up(x)
-        skip = self.att(x, concat_tensor)
-        b1 = film_dict['beta1']
-
-        x = self.conv1(F.leaky_relu_(self.bn1(input_tensor) + b1))
-        # (batch_size, input_feature_maps, time_steps, freq_bins)
-
-        x = torch.cat((x, skip), dim=1)
-        # (batch_size, input_feature_maps * 2, time_steps, freq_bins)
-        x = self.pw(x)
-        x = self.bn1(x)
+    def forward(self, input_tensor, concat_tensor, film_dict):
+        # Upsample
+        x = self.up(input_tensor)  # (B, C, H*2, W*2)
+        
+        # Attention with skip connection
+        skip = self.att(x, concat_tensor)  # Spatial attention
+        
+        # Concatenate upsampled and skip
+        x = torch.cat([x, skip], dim=1)  # (B, C*2, H*2, W*2)
+        
+        # Pointwise to reduce channels
+        x = self.pw(x)  # (B, C, H*2, W*2)
+        
+        # CBAM attention
         x = self.att2(x)
-        x = self.act(self.bn2(self.pw2(self.dw(x))))
-        x = self.conv_block2(x, film_dict['conv_block2'])
-        # output_tensor: (batch_size, output_feature_maps, time_steps, freq_bins)
-
+        
+        # FiLM conditioning
+        b1 = film_dict['beta1']
+        x = F.leaky_relu_(self.bn1(x) + b1, negative_slope=0.01)
+        
+        # Axial mixer (depthwise-like)
+        x = self.dw(x)
+        x = self.act(x)
+        
+        # Final pointwise projection
+        x = self.pw2(x)  # (B, out_channels, H*2, W*2)
+        x = self.bn2(x)
+        
         return x
+
 
 
 class ResUNet30_Base(nn.Module, Base):
@@ -432,10 +432,13 @@ class ResUNet30_Base(nn.Module, Base):
         self.c6 = CSAM(384)
 
         """Bottle Neck"""
-        self.bridge = nn.Sequential(
-        ConvMixer(512,512),
-        nn.BatchNorm2d(512),
-        nn.ReLU()
+        self.bridge = ConvBlockRes(
+            in_channels=384, 
+            out_channels=384, 
+            kernel_size=(3, 3),
+            downsample=(1, 1),
+            momentum=momentum,
+            has_film=True,
         )
 
         """Decoder"""
