@@ -8,14 +8,14 @@ from .base import Base, init_layer, init_bn, act
 from einops import rearrange, repeat
 # from resmamba_ulite.model.encoder import EncoderBlock
 # from resmamba_ulite.model.decoder import DecoderBlock
-from resmamba_ulite.pooling_attention import Pooling_attention
-from resmamba_ulite.resmambalite import ResMambaLite
+from ..resmamba_ulite.pooling_attention import Pooling_attention
+from ..resmamba_ulite.resmambalite import ResMambaLite
 
-from resmamba_ulite.cbam import CBAM
-from resmamba_ulite.csam import CSAM
+from ..resmamba_ulite.cbam import CBAM
+from ..resmamba_ulite.csam import CSAM
 
-from resmamba_ulite.convmixer import ConvMixer
-from resmamba_ulite.decoder_attention import MapReduce, Attention_img
+from ..resmamba_ulite.convmixer import ConvMixer
+from ..resmamba_ulite.decoder_attention import MapReduce, Attention_img
 
 class FiLM(nn.Module):
     def __init__(self, film_meta, condition_size):
@@ -317,9 +317,9 @@ class DecoderBlockRes1B(nn.Module):
 
 
 
-class ResUNet30_Base(nn.Module, Base):
+class ResMambaUlite_Base(nn.Module, Base):
     def __init__(self, input_channels, output_channels, target_sources_num):
-        super(ResUNet30_Base, self).__init__()
+        super(ResMambaUlite_Base, self).__init__()
 
         window_size = 1024
         hop_size = 160
@@ -432,15 +432,22 @@ class ResUNet30_Base(nn.Module, Base):
         self.c6 = CSAM(384)
 
         """Bottle Neck"""
-        self.bridge = ConvBlockRes(
-            in_channels=384, 
-            out_channels=384, 
+        # self.bridge = ConvBlockRes(
+        #     in_channels=384, 
+        #     out_channels=384, 
+        #     kernel_size=(1, 1),
+        #     momentum=momentum,
+        #     has_film=True,
+        # )
+
+        self.bridge = EncoderBlockRes1B(
+            in_channels=384,
+            out_channels=384,
             kernel_size=(3, 3),
             downsample=(1, 1),
             momentum=momentum,
             has_film=True,
         )
-
         """Decoder"""
         self.decoder_block1 = DecoderBlockRes1B(
             in_channels=384,
@@ -646,8 +653,8 @@ class ResUNet30_Base(nn.Module, Base):
 
         # Batch normalization
         x = x.transpose(1, 3)
-        x = self.bn0(x)
-        x = x.transpose(1, 3)
+        # x = self.bn0(x)
+        # x = x.transpose(1, 3)
         """(batch_size, chanenls, time_steps, freq_bins)"""
 
         # Pad spectrogram to be evenly divided by downsample ratio.
@@ -767,12 +774,12 @@ def get_film_meta(module):
     return film_meta
 
 
-class ResUNet30(nn.Module):
+class ResMambaUlite31(nn.Module):
     def __init__(self, input_channels, output_channels, target_sources_num, label_len):
-        super(ResUNet30, self).__init__()
+        super(ResMambaUlite31, self).__init__()
         self.target_sources_num = target_sources_num
 
-        self.base = ResUNet30_Base(
+        self.base = ResMambaUlite_Base(
             input_channels=input_channels, 
             output_channels=output_channels,
             target_sources_num=target_sources_num,
@@ -879,7 +886,7 @@ class ResUNet30(nn.Module):
 
         return out_np
 
-class ResUNet30MultiPredict(ResUNet30):
+class ResMambaUlite31MultiPredict(ResMambaUlite31):
     def __init__(self, input_channels, output_channels, target_sources_num, label_len):
         assert output_channels == 1
         super().__init__(input_channels=input_channels, output_channels=output_channels, target_sources_num=1, label_len=label_len) # target_sources_num is always 1
