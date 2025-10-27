@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from module.splitvss import SplitVSS
+from .splitvss import SplitVSS
 
 class ResMambaLite(nn.Module):
     def __init__(self, in_c, k_size = 3):

@@ -10,8 +10,8 @@ datamodule:
     main: DataModule
     args:
         train_dataloader:
-            batch_size: 2
-            num_workers: 2
+            batch_size: 1
+            num_workers: 4
             persistent_workers: false
             pin_memory: true
             persistent_workers: true
@@ -85,7 +85,7 @@ lightning_module:
                 lr: 0.0001
                 betas: [0.9, 0.999]
                 eps: 0.00000001
-                weight_decay: 0.0
+                weight_decay: 0.0001
                 amsgrad: true
         is_validation: true
 train:
@@ -119,7 +119,7 @@ train:
             strategy: auto
             num_nodes: 1
             precision: 16-mixed
-            accumulate_grad_batches: 4
+            accumulate_grad_batches: 8
             logger: null
             fast_dev_run: False
             max_epochs: 100
