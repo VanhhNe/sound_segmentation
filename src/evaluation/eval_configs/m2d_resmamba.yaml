@@ -16,18 +16,18 @@ model:
     args:
         label_set: "dcase2025t4"
         tagger_ckpt: 'checkpoint/m2dat.ckpt'
-        separator_ckpt: 'checkpoint/resunetk.ckpt'
+        separator_ckpt: 'workspace/mamba/resmamba/checkpoints/last-v1.ckpt'
 
-        tagger_config:
-            module: "src.models.m2dat.m2dat"
-            main: "M2dAt"
-            args:
-                ref_channel: 0
-                weight_file: "checkpoint/m2d_as_vit_base-80x1001p16x16p32k-240413_AS-FT_enconly/weights_ep69it3124-0.47998.pth"
-                num_classes: 18
+        tagger_config: null
+            #module: "src.models.m2dat.m2dat"
+            #main: "M2dAt"
+            # args:
+            #     ref_channel: 0
+            #     weight_file: "checkpoint/m2d_as_vit_base-80x1001p16x16p32k-240413_AS-FT_enconly/weights_ep69it3124-0.47998.pth"
+            #     num_classes: 18
         separator_config:
-            module: "src.models.resunet2.resunet_mod"
-            main: "ResUNet30"
+            module: "src.models.resunet2.resmamba_mod2"
+            main: "MambaUNet"
             args:
                 input_channels: 4
                 output_channels: 1
