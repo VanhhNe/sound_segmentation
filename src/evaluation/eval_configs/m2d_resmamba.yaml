@@ -4,7 +4,7 @@ dataset:
     args:
         soundscape_dir: 'data/dev_set/test/soundscape' 
         oracle_target_dir: 'data/dev_set/test/oracle_target'
-        estimate_target_dir: 'data/dev_set/test/estimate_target_resunetk' # --generate_waveform: estimated waveforms will be written to this dir
+        estimate_target_dir: 'data/dev_set/test/oracle_target' # --generate_waveform: estimated waveforms will be written to this dir
                                                           # --use_generated_waveform: estimated waveform will be loaded from this dir, ignore the model
         n_sources: 3
         label_set: "dcase2025t4"
@@ -12,19 +12,11 @@ dataset:
         sr: 32000
 model:
     module: "src.models.s5.s5"
-    main: "S5"
+    main: "Segmentation"
     args:
         label_set: "dcase2025t4"
-        tagger_ckpt: 'checkpoint/m2dat.ckpt'
         separator_ckpt: 'workspace/mamba/resmamba/checkpoints/last-v1.ckpt'
 
-        tagger_config: null
-            #module: "src.models.m2dat.m2dat"
-            #main: "M2dAt"
-            # args:
-            #     ref_channel: 0
-            #     weight_file: "checkpoint/m2d_as_vit_base-80x1001p16x16p32k-240413_AS-FT_enconly/weights_ep69it3124-0.47998.pth"
-            #     num_classes: 18
         separator_config:
             module: "src.models.resunet2.resmamba_mod2"
             main: "MambaUNet"

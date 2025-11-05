@@ -1,113 +1,94 @@
-import torch
 import random
 import numpy as np
 import yaml
 import json
 from tqdm import tqdm
-from torchmetrics.functional import (
+import torch
+from torchmetrics.functional import(
     scale_invariant_signal_noise_ratio as si_snr,
-    signal_noise_ratio as snr
-)
-import os
+    signal_noise_ratio as snr)
+import os, sys;
 import argparse
 import soundfile as sf
-from torch.utils.data import DataLoader
 
+from torch.utils.data import DataLoader
 from src.utils import LABELS, initialize_config, ca_metric
 
-class AudioSourceSeparator:
-    """Evaluate and separate audio sources from mixtures"""
-    
-    def __init__(
-        self,
-        config_path,
-        output_dir=None,
-        generate_waveform=True,
-        use_pregenerated=False,
-        batch_size=2,
-        device='cuda'
-    ):
-        """
-        Args:
-            config_path: Path to YAML configuration file
-            output_dir: Directory to save separated audio files
-            generate_waveform: Whether to generate and save separated waveforms
-            use_pregenerated: Use pre-separated audio instead of running model
-            batch_size: Batch size for processing
-            device: Device to run model on ('cuda' or 'cpu')
-        """
+all_labels = LABELS['dcase2025t4']
+
+class Evaluator:
+    def __init__(self,
+                 config_path,
+                 generate_waveform = True,
+                 use_generated_waveform=False,
+                 batch_size=2):
         self.config_path = config_path
         self.batch_size = batch_size
         self.generate_waveform = generate_waveform
-        self.use_pregenerated = use_pregenerated
-        self.output_dir = output_dir
-        self.device = device if torch.cuda.is_available() else 'cpu'
-        
-        # Validation
-        if self.use_pregenerated and self.generate_waveform:
-            raise ValueError(
-                'Cannot use pregenerated waveforms and generate new ones simultaneously'
-            )
+        self.use_generated_waveform = use_generated_waveform
+        assert not self.generate_waveform or not self.use_generated_waveform, 'if use_generated_waveform is True, waveform will not be generated again (generate_waveform should be False)'
 
-        # Load configuration
-        with open(self.config_path) as f:
-            config = yaml.safe_load(f)
+        with open(self.config_path) as f: config = yaml.safe_load(f)
 
         dsconfig = config['dataset']
-        
-        # Setup output directory
-            
-        if self.generate_waveform:
-            os.makedirs(self.output_dir, exist_ok=True)
-            print(f"Separated audio will be saved to: {self.output_dir}")
 
-        # Initialize dataset
+        if not self.use_generated_waveform:
+            outputdir = dsconfig['args'].pop('estimate_target_dir', None)
+        if self.generate_waveform:
+            self.outputdir = outputdir
+            os.makedirs(self.outputdir, exist_ok=True)
+
         dataset = initialize_config(config['dataset'], reload=True)
+
+        # load model and dataset
+        dataloader = DataLoader(dataset,
+                                batch_size=batch_size,
+                                shuffle=False,
+                                collate_fn=dataset.collate_fn,
+                                num_workers=batch_size*2)
+        model = initialize_config(config['model'], reload=True)
+        model.eval(); model = model.to('cuda')
+
         self.dataset = dataset
         self.sr = self.dataset.sr
-        
-        # Create dataloader
-        self.dataloader = DataLoader(
-            dataset,
-            batch_size=batch_size,
-            shuffle=False,
-            collate_fn=dataset.collate_fn,
-            num_workers=batch_size * 2
-        )
-        
-        # Load model
-
-        model = initialize_config(config['model'], reload=True)
-        model.eval()
-        model = model.to(self.device)
+        self.dataloader = dataloader
         self.model = model
-        print(f"Model loaded successfully on {self.device}")
 
     def write_audio(self, batch_est_labels, batch_est_waveforms, batch_soundscape_names):
         for labels, waveforms, soundscape_name in zip(batch_est_labels, batch_est_waveforms, batch_soundscape_names):
             for label, waveform in zip(labels, waveforms):
                 if label != 'silence':
-                    wavpath = os.path.join(self.output_dir, soundscape_name + '_' + label + '.wav')
+                    wavpath = os.path.join(self.outputdir, soundscape_name + '_' + label + '.wav')
                     sf.write(wavpath, waveform.numpy(), self.sr)
 
     def predict(self, mixture, labels=None):
         mixture = mixture.to('cuda')
-        
-        with torch.no_grad():
-            batch_est_labels = labels
-            output = self.model.separate(mixture, batch_est_labels)
-            batch_est_waveforms = output['waveform'].cpu()[:, :, 0, :]# [bs, nsources, wlen]
-        return batch_est_waveforms, batch_est_labels
+        if labels is not None:
+            with torch.no_grad():
+                batch_est_labels = labels
+                output = model.separate(mixture, batch_est_labels)
+                batch_est_waveforms = output['waveform'].cpu()[:, :, 0, :]# [bs, nsources, wlen]
+                return batch_est_waveforms, batch_est_labels
+        # else:
+        #     with torch.no_grad():
+        #         output = self.model.predict_label_separate(mixture, pthre=0.5, nevent_range=[1, 3])
+        #         batch_est_labels = output['label'] # bs, nsources
+        #         batch_est_waveforms = output['waveform'].cpu()[:, :, 0, :]# [bs, nsources, wlen]
+        # return batch_est_waveforms, batch_est_labels
 
     def evaluate(self):
         metrics = []
         label_checks = []
         for batch in tqdm(self.dataloader):
 
-            batch_est_waveforms, batch_est_labels = self.predict(batch['mixture'], batch['label'])
+            # if self.use_generated_waveform:
+            batch_est_waveforms = batch['est_dry_sources'][:, :, 0, :]
+            batch_est_labels = batch['est_label']
+            # else:
+            #     batch_est_waveforms, batch_est_labels = self.predict(batch['mixture'])
 
             if self.generate_waveform:
-                os.makedirs(self.output_dir, exist_ok=True)
+                os.makedirs(self.outputdir, exist_ok=True)
                 self.write_audio(batch_est_labels, batch_est_waveforms, batch['soundscape_name'])
 
             batch_mixture = batch['mixture'][:, 0, :] # [bs, wlen]
@@ -126,11 +107,9 @@ class AudioSourceSeparator:
         print('CA-SDRi: %.3f'%(np.mean(metrics)))
         print('Label prediction accuracy: %.2f'%(np.sum(label_checks)*100/len(label_checks)))
 
-
 def main(args):
-    evalobj = AudioSourceSeparator(
+    evalobj = Evaluator(
                  args.config,
-                 args.output_dir,
                  args.generate_waveform,
                  args.use_generated_waveform,
                  args.batchsize)
@@ -142,7 +121,9 @@ if __name__ == '__main__':
     parser.add_argument("--generate_waveform", action="store_true")
     parser.add_argument("--use_generated_waveform", action="store_true")
     parser.add_argument("--batchsize","-b", type=int, required=False, default=1)
-    parser.add_argument("--output_dir", "-d", type=str, required=True)
+
     args = parser.parse_args()
     print('START')
     main(args)
+
+# python -m src.evaluation.evaluate -c src/evaluation/eval_configs/m2d_resunetk.yaml --generate_waveform

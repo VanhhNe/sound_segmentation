@@ -81,12 +81,89 @@ class S5(torch.nn.Module):
         return reobj
 
 
+class Segmentation(torch.nn.Module):
+    """Audio segmentation model wrapper with label conditioning"""
+    
+    def __init__(
+        self,
+        separator_config,
+        label_set,
+        separator_ckpt=None,
+    ):
+        super().__init__()
 
+        # Initialize separator model
+        separator = initialize_config(separator_config)
 
+        # Load checkpoint if provided
+        if separator_ckpt is not None:
+            self._load_ckpt(separator_ckpt, separator)
+        
+        separator.eval()
+        self.separator = separator
 
+        # Setup label encoding
+        self.label_set = label_set
+        self.labels = LABELS[self.label_set]
+        self.onehots = torch.eye(len(self.labels), requires_grad=False).to(torch.float32)
+        self.label_onehots = {label: self.onehots[idx] for idx, label in enumerate(self.labels)}
+        self.label_onehots['silence'] = torch.zeros(
+            self.onehots.size(1), 
+            requires_grad=False, 
+            dtype=torch.float32
+        )
+    
+    def _load_ckpt(self, path, model):
+        """Load model checkpoint with automatic prefix handling"""
+        model_ckpt = torch.load(path, weights_only=False, map_location='cpu')['state_dict']
+        
+        # Remove prefix if checkpoint is from lightning module
+        if set(model.state_dict().keys()) != set(model_ckpt.keys()):
+            one_model_key = next(iter(model.state_dict().keys()))
+            ckpt_corresponding_key = [k for k in model_ckpt.keys() if k.endswith(one_model_key)]
+            prefix = ckpt_corresponding_key[0][:-len(one_model_key)]
+            model_ckpt = {
+                k[len(prefix):]: v 
+                for k, v in model_ckpt.items() 
+                if k.startswith(prefix)
+            }
+        
+        model.load_state_dict(model_ckpt)
+        print(f"Loaded checkpoint from: {path}")
+    
+    def _get_label(self, batch_multihot_vector):
+        """Convert multihot vector to label list"""
+        labels = []
+        for multihot in batch_multihot_vector:
+            label = [l for i, l in enumerate(self.labels) if multihot[i] > 0]
+            labels.append(label)
+        return labels
 
-
-
-
-
-
+    def _get_label_vector(self, batch_labels):
+        """Convert label list to label vector"""
+        return torch.stack([
+            torch.stack([self.label_onehots[label] for label in labels]).flatten() 
+            for labels in batch_labels
+        ])
+    
+    def separate(self, batch_mixture, batch_labels):
+        """
+        Separate audio sources based on labels
+        
+        Args:
+            batch_mixture: [bs, channels, wlen] mixed audio tensor
+            batch_labels: [[label1, label2, ...], ...] list of label lists
+            
+        Returns:
+            Dictionary with 'waveform' key containing separated sources
+        """
+        label_vector = self._get_label_vector(batch_labels).to(batch_mixture.device)
+        
+        separator_input = {
+            'mixture': batch_mixture, 
+            'label_vector': label_vector,
+        }
+        
+        separator_output = self.separator(separator_input)
+        
+        return {'waveform': separator_output['waveform']}
