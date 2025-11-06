@@ -10,7 +10,7 @@ from einops import rearrange, repeat
 # from resmamba_ulite.model.decoder import DecoderBlock
 from ..resmamba_ulite.pooling_attention import Pooling_attention
 from ..resmamba_ulite.resmambalite import ResMambaLite
-
+from torch.utils.checkpoint import checkpoint
 from ..resmamba_ulite.cbam import CBAM
 from ..resmamba_ulite.csam import CSAM
 
@@ -157,16 +157,6 @@ class ConvBlockRes(nn.Module):
             bias=False,
         )
 
-        self.conv2 = nn.Conv2d(
-            in_channels=out_channels,
-            out_channels=out_channels,
-            kernel_size=kernel_size,
-            stride=(1, 1),
-            dilation=(1, 1),
-            padding=padding,
-            bias=False,
-        )
-
         self.mamba = ResMambaLite(in_c=in_channels)
 
         if in_channels != out_channels:
@@ -190,7 +180,6 @@ class ConvBlockRes(nn.Module):
         init_bn(self.bn1)
         init_bn(self.bn2)
         init_layer(self.conv1)
-        init_layer(self.conv2)
 
         if self.is_shortcut:
             init_layer(self.shortcut)
@@ -207,9 +196,10 @@ class ConvBlockRes(nn.Module):
 
         b1 = film_dict['beta1']
         b2 = film_dict['beta2']
-        x = self.mamba(input_tensor)
+        # x = self.mamba(input_tensor)
+        x = checkpoint(self.mamba, input_tensor, use_reentrant=False)
         x = self.conv1(F.leaky_relu_(self.bn1(x) + b1, negative_slope=0.01))
-        x = self.conv2(F.leaky_relu_(self.bn2(x) + b2, negative_slope=0.01))
+        # x = self.conv2(F.leaky_relu_(self.bn2(x) + b2, negative_slope=0.01))
 
         if self.is_shortcut:
             return self.shortcut(input_tensor) + x
@@ -357,24 +347,16 @@ class ResMambaUlite_Base(nn.Module, Base):
 
         # self.bn0 = nn.BatchNorm2d(window_size // 2 + 1, momentum=momentum)
 
-        # self.pre_conv = nn.Conv2d(
-        #     in_channels=input_channels, 
-        #     out_channels=32, 
-        #     kernel_size=(1, 1), 
-        #     stride=(1, 1), 
-        #     padding=(0, 0), 
-        #     bias=True,
-        # )
+        self.pre_conv = nn.Conv2d(
+            in_channels=input_channels, 
+            out_channels=32, 
+            kernel_size=(1, 1), 
+            stride=(1, 1), 
+            padding=(0, 0), 
+            bias=True,
+        )
 
         self.encoder_block1 = EncoderBlockRes1B(
-            in_channels=32,
-            out_channels=32,
-            kernel_size=(3, 3),
-            downsample=(2, 2),
-            momentum=momentum,
-            has_film=True,
-        )
-        self.encoder_block2 = EncoderBlockRes1B(
             in_channels=32,
             out_channels=64,
             kernel_size=(3, 3),
@@ -382,7 +364,7 @@ class ResMambaUlite_Base(nn.Module, Base):
             momentum=momentum,
             has_film=True,
         )
-        self.encoder_block3 = EncoderBlockRes1B(
+        self.encoder_block2 = EncoderBlockRes1B(
             in_channels=64,
             out_channels=128,
             kernel_size=(3, 3),
@@ -390,7 +372,7 @@ class ResMambaUlite_Base(nn.Module, Base):
             momentum=momentum,
             has_film=True,
         )
-        self.encoder_block4 = EncoderBlockRes1B(
+        self.encoder_block3 = EncoderBlockRes1B(
             in_channels=128,
             out_channels=256,
             kernel_size=(3, 3),
@@ -398,38 +380,14 @@ class ResMambaUlite_Base(nn.Module, Base):
             momentum=momentum,
             has_film=True,
         )
-        self.encoder_block5 = EncoderBlockRes1B(
-            in_channels=256,
-            out_channels=384,
-            kernel_size=(3, 3),
-            downsample=(2, 2),
-            momentum=momentum,
-            has_film=True,
-        )
-        self.encoder_block6 = EncoderBlockRes1B(
-            in_channels=384,
-            out_channels=384,
-            kernel_size=(3, 3),
-            downsample=(1, 2),
-            momentum=momentum,
-            has_film=True,
-        )
-        # self.conv_block7a = EncoderBlockRes1B(
-        #     in_channels=384,
-        #     out_channels=384,
-        #     kernel_size=(3, 3),
-        #     downsample=(1, 1),
-        #     momentum=momentum,
-        #     has_film=True,
-        # )
 
         """Skip connection"""
-        self.c1 = CSAM(32)
-        self.c2 = CSAM(64)
-        self.c3 = CSAM(128)
-        self.c4 = CSAM(256)
-        self.c5 = CSAM(384)
-        self.c6 = CSAM(384)
+        self.c1 = CSAM(64)
+        self.c2 = CSAM(128)
+        self.c3 = CSAM(256)
+        # self.c4 = CSAM(256)
+        # self.c5 = CSAM(512)
+        # self.c6 = CSAM(384)
 
         """Bottle Neck"""
         # self.bridge = ConvBlockRes(
@@ -440,48 +398,21 @@ class ResMambaUlite_Base(nn.Module, Base):
         #     has_film=True,
         # )
 
-        self.bridge = EncoderBlockRes1B(
-            in_channels=384,
-            out_channels=384,
-            kernel_size=(3, 3),
-            downsample=(1, 1),
-            momentum=momentum,
-            has_film=True,
-        )
+        self.bridge = nn.Sequential(
+            ConvMixer(256,256),
+            nn.BatchNorm2d(256),
+            nn.ReLU()
+            )
         """Decoder"""
         self.decoder_block1 = DecoderBlockRes1B(
-            in_channels=384,
-            out_channels=384,
+            in_channels=256,
+            out_channels=128,
             kernel_size=(3, 3),
             upsample=(1, 2),
             momentum=momentum,
             has_film=True,
         )
         self.decoder_block2 = DecoderBlockRes1B(
-            in_channels=384,
-            out_channels=384,
-            kernel_size=(3, 3),
-            upsample=(2, 2),
-            momentum=momentum,
-            has_film=True,
-        )
-        self.decoder_block3 = DecoderBlockRes1B(
-            in_channels=384,
-            out_channels=256,
-            kernel_size=(3, 3),
-            upsample=(2, 2),
-            momentum=momentum,
-            has_film=True,
-        )
-        self.decoder_block4 = DecoderBlockRes1B(
-            in_channels=256,
-            out_channels=128,
-            kernel_size=(3, 3),
-            upsample=(2, 2),
-            momentum=momentum,
-            has_film=True,
-        )
-        self.decoder_block5 = DecoderBlockRes1B(
             in_channels=128,
             out_channels=64,
             kernel_size=(3, 3),
@@ -489,7 +420,7 @@ class ResMambaUlite_Base(nn.Module, Base):
             momentum=momentum,
             has_film=True,
         )
-        self.decoder_block6 = DecoderBlockRes1B(
+        self.decoder_block3 = DecoderBlockRes1B(
             in_channels=64,
             out_channels=32,
             kernel_size=(3, 3),
@@ -497,39 +428,44 @@ class ResMambaUlite_Base(nn.Module, Base):
             momentum=momentum,
             has_film=True,
         )
+        # self.decoder_block4 = DecoderBlockRes1B(
+        #     in_channels=64,
+        #     out_channels=32,
+        #     kernel_size=(3, 3),
+        #     upsample=(2, 2),
+        #     momentum=momentum,
+        #     has_film=True,
+        # )
 
         """Map reduce"""
-        self.map1 = MapReduce(384)
-        self.map2 = MapReduce(256)
-        self.map3 = MapReduce(128)
-        self.map4 = MapReduce(64)
-        self.map5 = MapReduce(32)
-        self.map5 = MapReduce(16)
-
-        """Decoder Attention"""
-        self.att = Attention_img()
+        # self.map1 = MapReduce(512)
+        self.map1 = MapReduce(128)
+        self.map2 = MapReduce(64)
+        self.map3 = MapReduce(32)
+        # self.map4 = MapReduce(32)
         
-        # self.after_conv = nn.Conv2d(
-        #     in_channels=32,
-        #     out_channels=input_channels * self.K * self.target_sources_num,
-        #     kernel_size=(1, 1),
-        #     stride=(1, 1),
-        #     padding=(0, 0),
-        #     bias=True,
-        # )
-        # self.out_conv = nn.Conv2d(
-        #     in_channels = input_channels,
-        #     out_channels = output_channels,
-        #     kernel_size=(1, 1),
-        #     stride=(1, 1),
-        #     padding=(0, 0),
-        #     bias=True,
-        # )
+        self.att = Attention_img()
+        self.after_conv = nn.Conv2d(
+            in_channels=1,
+            out_channels=input_channels * self.K * self.target_sources_num,
+            kernel_size=(1, 1),
+            stride=(1, 1),
+            padding=(0, 0),
+            bias=True,
+        )
+        self.out_conv = nn.Conv2d(
+            in_channels = input_channels,
+            out_channels = output_channels,
+            kernel_size=(1, 1),
+            stride=(1, 1),
+            padding=(0, 0),
+            bias=True,
+        )
 
-        # self.init_weights()
+        self.init_weights()
 
     def init_weights(self):
-        init_bn(self.bn0)
+        # init_bn(self.bn0)
         init_layer(self.pre_conv)
         init_layer(self.after_conv)
 
@@ -652,7 +588,7 @@ class ResMambaUlite_Base(nn.Module, Base):
         x = mag
 
         # Batch normalization
-        x = x.transpose(1, 3)
+        # x = x.transpose(1, 3)
         # x = self.bn0(x)
         # x = x.transpose(1, 3)
         """(batch_size, chanenls, time_steps, freq_bins)"""
@@ -670,60 +606,44 @@ class ResMambaUlite_Base(nn.Module, Base):
         x = x[..., 0 : x.shape[-1] - 1]  # (bs, channels, T, F)
         H, W = x.shape[2], x.shape[3]
         # UNet
-        # x = self.pre_conv(x)
+        x = self.pre_conv(x)
 
         """Encoder"""
         x1_pool, x1 = self.encoder_block1(x, film_dict['encoder_block1'])  # x1_pool: (bs, 32, T / 2, F / 2)
         x2_pool, x2 = self.encoder_block2(x1_pool, film_dict['encoder_block2'])  # x2_pool: (bs, 64, T / 4, F / 4)
         x3_pool, x3 = self.encoder_block3(x2_pool, film_dict['encoder_block3'])  # x3_pool: (bs, 128, T / 8, F / 8)
-        x4_pool, x4 = self.encoder_block4(x3_pool, film_dict['encoder_block4'])  # x4_pool: (bs, 256, T / 16, F / 16)
-        x5_pool, x5 = self.encoder_block5(x4_pool, film_dict['encoder_block5'])  # x5_pool: (bs, 384, T / 32, F / 32)
-        x6_pool, x6 = self.encoder_block6(x5_pool, film_dict['encoder_block6'])  # x6_pool: (bs, 384, T / 32, F / 64)
-        
+        # x4_pool, x4 = self.encoder_block4(x3_pool, film_dict['encoder_block4'])  # x4_pool: (bs, 256, T / 16, F / 16)
+       
         """Skip connection"""
         x1 = self.c1(x1)
         x2 = self.c2(x2)
         x3 = self.c3(x3)
-        x4 = self.c4(x4)
-        x5 = self.c5(x5)
-        x6 = self.c6(x6)
+        # x4 = self.c4(x4)
+        
 
         """BottleNeck"""
-        x_center = self.bridge(x6_pool)  # (bs, 384, T / 32, F / 64)
+        x_center = self.bridge(x3_pool)  # (bs, 384, T / 32, F / 64)
         
         """Decoder"""
-        x7 = self.decoder_block1(x_center, x6, film_dict['decoder_block1'])  # (bs, 384, T / 32, F / 32)
-        x_dec1 = self.map1(x7)
+        x5 = self.decoder_block1(x_center, x3, film_dict['decoder_block1'])  # (bs, 384, T / 32, F / 32)
+        x_dec1 = self.map1(x5)
         x_dec1 = F.interpolate(x_dec1, (H, W), mode="bilinear", align_corners=False)
         
-        x8 = self.decoder_block2(x7, x5, film_dict['decoder_block2'])  # (bs, 384, T / 16, F / 16)
-        x_dec2 = self.map1(x8)
+        x6 = self.decoder_block2(x5, x2, film_dict['decoder_block2'])  # (bs, 384, T / 16, F / 16)
+        x_dec2 = self.map2(x6)
         x_dec2 = F.interpolate(x_dec2, (H, W), mode="bilinear", align_corners=False)
         
-        x9 = self.decoder_block3(x8, x4, film_dict['decoder_block3'])  # (bs, 256, T / 8, F / 8)
-        x_dec3 = self.map1(x9)
+        x7 = self.decoder_block3(x6, x1, film_dict['decoder_block3'])  # (bs, 256, T / 8, F / 8)
+        x_dec3 = self.map3(x7)
         x_dec3 = F.interpolate(x_dec3, (H, W), mode="bilinear", align_corners=False)
 
-        x10 = self.decoder_block4(x9, x3, film_dict['decoder_block4'])  # (bs, 128, T / 4, F / 4)
-        x_dec4 = self.map1(x10)
-        x_dec4 = F.interpolate(x_dec4, (H, W), mode="bilinear", align_corners=False)
+        # x8 = self.decoder_block4(x7, x1, film_dict['decoder_block4'])  # (bs, 128, T / 4, F / 4)
+        # x_dec4 = self.map4(x8)
+        # x_dec4 = F.interpolate(x_dec4, (H, W), mode="bilinear", align_corners=False)
 
-        x11 = self.decoder_block5(x10, x2, film_dict['decoder_block5'])  # (bs, 64, T / 2, F / 2)
-        x_dec5 = self.map1(x11)
-        x_dec5 = F.interpolate(x_dec5, (H, W), mode="bilinear", align_corners=False)
-
-        x12 = self.decoder_block6(x11, x1, film_dict['decoder_block6'])  # (bs, 32, T, F)
-        x_dec6 = self.map1(x12)
-        x_dec6 = F.interpolate(x_dec6, (H, W), mode="bilinear", align_corners=False)
-
-        x_dec5 = self.att(x_dec5, x_dec6)
-        x_dec4 = self.att(x_dec4, x_dec5)
-        x_dec3 = self.att(x_dec3, x_dec4)
         x_dec2 = self.att(x_dec2, x_dec3)
         x_dec1 = self.att(x_dec1, x_dec2)
-        
-        x = x_dec1
-
+        x = self.after_conv(x_dec3)
         # Recover shape
         x = F.pad(x, pad=(0, 1))
         x = x[:, :, 0:origin_len, :]

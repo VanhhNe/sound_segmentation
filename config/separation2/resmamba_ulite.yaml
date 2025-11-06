@@ -118,7 +118,7 @@ train:
             devices: 1
             strategy: auto
             num_nodes: 1
-            precision: bf16-mixed
+            precision: 16-mixed
             accumulate_grad_batches: 4
             logger: null
             fast_dev_run: False
