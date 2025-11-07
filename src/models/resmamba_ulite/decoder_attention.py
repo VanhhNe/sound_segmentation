@@ -4,9 +4,9 @@ class MapReduce(nn.Module):
     """
     Reduce feature maps into a single edge map
     """
-    def __init__(self, channels):
+    def __init__(self, in_channels):
         super(MapReduce, self).__init__()
-        self.conv = nn.Conv2d(channels, 1, kernel_size=1, padding=0)
+        self.conv = nn.Conv2d(in_channels, 32, kernel_size=1, padding=0)
         nn.init.constant_(self.conv.bias, 0)
 
     def forward(self, x):
@@ -16,13 +16,13 @@ class Attention_img(nn.Module):
   """Apply attention mechanism to output images"""
   def __init__(self):
     super().__init__()
-    self.bn = nn.BatchNorm2d(1)
+    self.gn = nn.GroupNorm(num_groups=8, num_channels=32)
     self.relu  = nn.ReLU(inplace=True)
     self.sigmoid = nn.Sigmoid()
     self.conv_out = nn.Conv2d(2,1,kernel_size=1, bias=True)
     
   def forward(self, x1, x2):
-    x = self.bn(x1 + x2)
+    x = self.gn(x1 + x2)
     x = self.relu(x)
     x = self.sigmoid(x)
     return x1*x+x2

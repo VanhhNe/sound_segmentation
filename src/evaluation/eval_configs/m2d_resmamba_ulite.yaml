@@ -1,0 +1,29 @@
+dataset:
+    module: "src.datamodules.dataset.s5.dataset_s5_waveform"
+    main: "DatasetS5Waveform"
+    args:
+        soundscape_dir: 'data/dev_set/test/soundscape' 
+        oracle_target_dir: 'data/dev_set/test/oracle_target'
+        estimate_target_dir: 'data/dev_set/test/oracle_target' # --generate_waveform: estimated waveforms will be written to this dir
+                                                          # --use_generated_waveform: estimated waveform will be loaded from this dir, ignore the model
+        n_sources: 3
+        label_set: "dcase2025t4"
+        label_vector_mode: "concat"
+        sr: 32000
+model:
+    module: "src.models.s5.s5"
+    main: "Segmentation"
+    args:
+        label_set: "dcase2025t4"
+        separator_ckpt: 'workspace/mamba_ulite/resmamba_ulite/checkpoints/last.ckpt'
+
+        separator_config:
+            module: "src.models.resunet2.resmamba_ulite"
+            main: "ResMambaUlite31"
+            args:
+                input_channels: 4
+                output_channels: 1
+                target_sources_num: 3
+                label_len: 54
+
+
