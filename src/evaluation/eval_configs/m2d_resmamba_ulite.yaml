@@ -15,7 +15,7 @@ model:
     main: "Segmentation"
     args:
         label_set: "dcase2025t4"
-        separator_ckpt: 'workspace/mamba_ulite/resmamba_ulite/checkpoints/last.ckpt'
+        separator_ckpt: 'workspace/mamba_ulite/resmamba_ulite/checkpoints/epoch=16.ckpt'
 
         separator_config:
             module: "src.models.resunet2.resmamba_ulite"
