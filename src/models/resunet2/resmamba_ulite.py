@@ -345,8 +345,6 @@ class ResMambaUlite_Base(nn.Module, Base):
             freeze_parameters=True,
         )
 
-        # self.bn0 = nn.BatchNorm2d(window_size // 2 + 1, momentum=momentum)
-
         self.pre_conv = nn.Conv2d(
             in_channels=input_channels, 
             out_channels=32, 
@@ -385,24 +383,13 @@ class ResMambaUlite_Base(nn.Module, Base):
         self.c1 = CSAM(64)
         self.c2 = CSAM(128)
         self.c3 = CSAM(256)
-        # self.c4 = CSAM(256)
-        # self.c5 = CSAM(512)
-        # self.c6 = CSAM(384)
-
-        """Bottle Neck"""
-        # self.bridge = ConvBlockRes(
-        #     in_channels=384, 
-        #     out_channels=384, 
-        #     kernel_size=(1, 1),
-        #     momentum=momentum,
-        #     has_film=True,
-        # )
 
         self.bridge = nn.Sequential(
             ConvMixer(256,256),
             nn.BatchNorm2d(256),
             nn.ReLU()
-            )
+        )
+        
         """Decoder"""
         self.decoder_block1 = DecoderBlockRes1B(
             in_channels=256,
@@ -428,31 +415,22 @@ class ResMambaUlite_Base(nn.Module, Base):
             momentum=momentum,
             has_film=True,
         )
-        # self.decoder_block4 = DecoderBlockRes1B(
-        #     in_channels=64,
-        #     out_channels=32,
-        #     kernel_size=(3, 3),
-        #     upsample=(2, 2),
-        #     momentum=momentum,
-        #     has_film=True,
-        # )
 
         """Map reduce"""
-        # self.map1 = MapReduce(512)
         self.map1 = MapReduce(128)
         self.map2 = MapReduce(64)
         self.map3 = MapReduce(32)
-        # self.map4 = MapReduce(32)
         
         self.att = Attention_img()
         self.after_conv = nn.Conv2d(
-            in_channels=1,
+            in_channels=32,
             out_channels=input_channels * self.K * self.target_sources_num,
             kernel_size=(1, 1),
             stride=(1, 1),
             padding=(0, 0),
             bias=True,
         )
+
         self.out_conv = nn.Conv2d(
             in_channels = input_channels,
             out_channels = output_channels,
@@ -587,12 +565,6 @@ class ResMambaUlite_Base(nn.Module, Base):
         mag, cos_in, sin_in = self.wav_to_spectrogram_phase(mixtures)
         x = mag
 
-        # Batch normalization
-        # x = x.transpose(1, 3)
-        # x = self.bn0(x)
-        # x = x.transpose(1, 3)
-        """(batch_size, chanenls, time_steps, freq_bins)"""
-
         # Pad spectrogram to be evenly divided by downsample ratio.
         origin_len = x.shape[2]
         pad_len = (
@@ -612,38 +584,31 @@ class ResMambaUlite_Base(nn.Module, Base):
         x1_pool, x1 = self.encoder_block1(x, film_dict['encoder_block1'])  # x1_pool: (bs, 32, T / 2, F / 2)
         x2_pool, x2 = self.encoder_block2(x1_pool, film_dict['encoder_block2'])  # x2_pool: (bs, 64, T / 4, F / 4)
         x3_pool, x3 = self.encoder_block3(x2_pool, film_dict['encoder_block3'])  # x3_pool: (bs, 128, T / 8, F / 8)
-        # x4_pool, x4 = self.encoder_block4(x3_pool, film_dict['encoder_block4'])  # x4_pool: (bs, 256, T / 16, F / 16)
-       
         """Skip connection"""
         x1 = self.c1(x1)
         x2 = self.c2(x2)
         x3 = self.c3(x3)
-        # x4 = self.c4(x4)
-        
-
         """BottleNeck"""
         x_center = self.bridge(x3_pool)  # (bs, 384, T / 32, F / 64)
-        
+
         """Decoder"""
         x5 = self.decoder_block1(x_center, x3, film_dict['decoder_block1'])  # (bs, 384, T / 32, F / 32)
+        
         x_dec1 = self.map1(x5)
         x_dec1 = F.interpolate(x_dec1, (H, W), mode="bilinear", align_corners=False)
-        
+
         x6 = self.decoder_block2(x5, x2, film_dict['decoder_block2'])  # (bs, 384, T / 16, F / 16)
         x_dec2 = self.map2(x6)
         x_dec2 = F.interpolate(x_dec2, (H, W), mode="bilinear", align_corners=False)
-        
+
         x7 = self.decoder_block3(x6, x1, film_dict['decoder_block3'])  # (bs, 256, T / 8, F / 8)
         x_dec3 = self.map3(x7)
         x_dec3 = F.interpolate(x_dec3, (H, W), mode="bilinear", align_corners=False)
 
-        # x8 = self.decoder_block4(x7, x1, film_dict['decoder_block4'])  # (bs, 128, T / 4, F / 4)
-        # x_dec4 = self.map4(x8)
-        # x_dec4 = F.interpolate(x_dec4, (H, W), mode="bilinear", align_corners=False)
-
         x_dec2 = self.att(x_dec2, x_dec3)
         x_dec1 = self.att(x_dec1, x_dec2)
-        x = self.after_conv(x_dec3)
+
+        x = self.after_conv(x_dec1)
         # Recover shape
         x = F.pad(x, pad=(0, 1))
         x = x[:, :, 0:origin_len, :]
@@ -843,4 +808,3 @@ class ResMambaUlite31MultiPredict(ResMambaUlite31):
             output_dict['source_mask'] = output_dict['source_mask'].reshape(bs, self.nsources, 1)
 
         return output_dict
-    
